@@ -1,0 +1,432 @@
+<!doctype html>
+<html>
+  <head>
+    <title>SIR Model</title>
+    <link rel="stylesheet" href="../../lib/jquery-ui.css">
+    <script src="../../lib/jquery-latest.min.js"></script>
+    <script src="../../lib/jquery-ui.js"></script>
+    <script src="../../lib/jquery.flot.js"></script>
+    <script src="../../lib/jquery.flot.symbol.js"></script>
+    <script src="../../lib/coffee-script.js"></script>
+    <script src="../../lib/gu.js"></script>
+    <script type="text/coffeescript">
+      class Parameter
+        constructor: (@val, min, max, step, @str) ->
+          me = this
+
+          @slider = $("<div />").slider(
+            value: me.val
+            min: min
+            max: max
+            step: step
+            #change: (ev, ui) ->
+              #gogogo()
+            slide: (ev, ui) ->
+              me.setVal(ui.value)
+              gogogo()
+          )
+
+          @setVal = (v) ->
+            me.val = v
+            me.label.html("#{me.str} = #{me.val}")
+            #MathJax.Hub.Queue(["Typeset", MathJax.Hub, me.label[0]])
+
+          @label = $("<div />")
+            .html("#{me.str} = #{me.val}")
+
+      a = new Parameter .6, .01, 3, .01, "a"
+      b = new Parameter .34, .01, 3, .01, "b"
+      c = new Parameter .1, 0, 3, .01, "c"
+      for p in [a, b, c]
+        $("#constants").append(
+          p.label.addClass("label").css(
+            display: "inline-block"
+            width: "5em"
+          ),
+          p.slider.addClass("slider").css(
+            display: "inline-block"
+          ),
+          "<br />"
+        )
+
+      step = new Parameter .03, .01, .1, .005, "Spacing"
+      $("#slopefield").append(
+        step.label.addClass("label").css(
+          display: "inline-block"
+        ),
+        step.slider.addClass("slider").css(
+          marginLeft: "1em"
+          display: "inline-block"
+        ),
+      )
+
+      s0 = new Parameter .9, 0, 1, .01, "S(0)"
+      eulerstep = new Parameter 1, .1, 3, .1, "&Delta;t"
+      eulernum = new Parameter 5, 0, 20, 1, "# steps"
+      for p in [s0, eulerstep, eulernum]
+        $("#euler").append(
+          p.label.addClass("label").css(
+            display: "inline-block"
+            width: "8em"
+          ),
+          p.slider.addClass("slider").css(
+            display: "inline-block"
+          ),
+          "<br />"
+        )
+
+      dsdt = (s, i) -> -a.val*s*i+c.val*(1-s-i)
+      didt = (s, i) -> a.val*s*i-b.val*i
+
+      slopefield = ->
+        [
+          data: ( ->
+            r = []
+            for x in [0..1] by step.val
+              for y in [0..1-x+step.val/2] by step.val
+                if dsdt(x, y) isnt 0
+                  slope = didt(x, y) / dsdt(x, y)
+                  dx = step.val / 3 / Math.sqrt(slope * slope + 1)
+                  dy = slope * dx
+                  r.push [x-dx, y-dy]
+                  r.push [x+dx, y+dy]
+                else
+                  r.push [x, y-step.val/3]
+                  r.push [x, y+step.val/3]
+                r.push null
+            r
+          )()
+          color: "gray"
+          lines:
+            lineWidth: 2
+        ]
+
+      arrows = on
+      sf = ->
+        [
+          data: ( ->
+            r = []
+            n = 3 # arrow head is 1/n of the length of the slope
+            tip = step.val / 3
+            dx0 = step.val / 3 * (1 - 2 / n)
+            dy0 = step.val * 2 / (3 * Math.sqrt(3) * n)
+            for x in [0..1] by step.val
+              for y in [0..1-x+step.val/2] by step.val
+                dx = dsdt(x, y)
+                dy = didt(x, y)
+                hypotenuse = Math.sqrt(dx * dx + dy * dy)
+                if hypotenuse isnt 0
+                  cos = dx / hypotenuse
+                  sin = dy / hypotenuse
+                  r.push [x - cos * tip, y - sin * tip]
+                  r.push [x + cos * tip, y + sin * tip]
+                  r.push null
+                  if arrows is on
+                    r.push [x + cos * dx0 - sin * dy0, y + sin * dx0 + cos * dy0]
+                    r.push [x + cos * tip, y + sin * tip]
+                    r.push [x + cos * dx0 + sin * dy0, y + sin * dx0 - cos * dy0]
+                    r.push null
+                else
+                  r.push null
+            r
+          )()
+          color: "gray"
+          lines:
+            lineWidth: 2
+        ]
+      $("#slopefield")
+        .append("<br /><div class='label' style='display: inline-block;'>Arrows</div>&nbsp;")
+        .append($("<input type='checkbox' checked='checked' />").change( ->
+          arrows = this.checked
+          gogogo()
+        ))
+
+      nullclines = ->
+        [
+          data: ( ->
+            r = []
+            for x in [-.1..1.1] by .02
+              r.push [x, c.val*(1-x)/(a.val*x+c.val)]
+            r
+          )()
+          color: "blue"
+          lines:
+            lineWidth: 3
+         ,
+          data: [
+            [-.1,0]
+            [1.1,0]
+            null
+            [b.val/a.val,-.1]
+            [b.val/a.val,1.1]
+          ]
+          color: "red"
+          lines:
+            lineWidth: 3
+        ]
+
+      shading = ->
+        wall = b.val/a.val
+        [
+          data: ( ->
+            r = [ [wall, 1-wall] ]
+            for x in [1...wall] by -.02
+              r.push [x, c.val*(1-x)/(a.val*x+c.val)]
+            r.push [wall, c.val*(1-wall)/(a.val*wall+c.val)]
+            r.push [wall, 1-wall]
+            r
+          )()
+          lines:
+            lineWidth: 0
+            fill: true
+            fillColor: "rgba(255,0,0,.3)"
+         ,
+          data: ( ->
+            r = [ [wall, 1-wall] ]
+            for x in [0...wall] by .02
+              r.push [x, c.val*(1-x)/(a.val*x+c.val)]
+            r.push [wall, c.val*(1-wall)/(a.val*wall+c.val)]
+            r.push [wall, 1-wall]
+            r
+          )()
+          lines:
+            lineWidth: 0
+            fill: true
+            fillColor: "rgba(255,165,0,.3)"
+         ,
+          data: ( ->
+            r = [ [0, 0] ]
+            for x in [0...wall] by .02
+              r.push [x, c.val*(1-x)/(a.val*x+c.val)]
+            r.push [wall, c.val*(1-wall)/(a.val*wall+c.val)]
+            r.push [wall, 0]
+            r.push [0, 0]
+            r
+          )()
+          lines:
+            lineWidth: 0
+            fill: true
+            fillColor: "rgba(0,128,0,.3)"
+         ,
+          data: ( ->
+            r = [ [wall, 0] ]
+            for x in [1...wall] by -.02
+              r.push [x, c.val*(1-x)/(a.val*x+c.val)]
+            r.push [wall, c.val*(1-wall)/(a.val*wall+c.val)]
+            r.push [wall, 0]
+            r
+          )()
+          lines:
+            lineWidth: 0
+            fill: true
+            fillColor: "rgba(0,0,128,.3)"
+        ]
+
+      euler = (dt, T, color, showPoints) ->
+        [
+          data: ( ->
+            r = []
+            s = s0.val
+            i = 1-s #i0.val
+            for t in [0..T] by dt
+              r.push [s, i]
+              s += dsdt(s, i) * dt
+              i += didt(s, i) * dt
+            r
+          )()
+          color: color
+          lines:
+            show: true
+            lineWidth: 3
+          points:
+            show: showPoints
+            fillColor: "white"
+        ]
+
+      axes = [
+        data: [
+          [-.1,0]
+          [1.1,0]
+          null
+          [0,-.1]
+          [0,1.1]
+        ]
+        color: "black"
+        shadowSize: 0
+      ]
+
+      gogogo = ->
+        $.plot("#graph", axes.concat(
+          shading(),
+          nullclines(),
+          sf(),
+          euler(.1, 100, "black", false), # actual solution
+          euler(eulerstep.val, (eulernum.val+.5)*eulerstep.val, "green", true)
+        ), gu.axes(-.02, 1.02, -.02, 1.02)
+        )
+        eulertable = []
+        s = s0.val
+        i = 1-s #i0.val
+        for t in [0..(eulernum.val+.5)*eulerstep.val] by eulerstep.val
+          eulertable.push [t, s, i, dsdt(s,i), didt(s,i), 1-s-i]
+          s += dsdt(s, i) * eulerstep.val
+          i += didt(s, i) * eulerstep.val
+        eulertbody = $("#eulertable tbody")
+        eulertbody.html("")
+        rowcount = 0
+        for row in eulertable
+          newrow = $("<tr>")
+          eulertbody.append(newrow)
+          newrow.append($("<td>").html(rowcount))
+          rowcount += 1
+          for col in row
+            newrow.append($("<td>").html(col.toFixed(4)))
+
+      $ ->
+        gogogo()
+        $("#showtext").change( ->
+          $("#right > div").slideToggle()
+        )
+    </script>
+    <script type="text/x-mathjax-config">MathJax.Hub.Config({tex2jax:{inlineMath:[['$','$'],["\\(","\\)"]],processEscapes:true}});</script>
+    <script src="//cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_HTML"></script>
+    <style>
+      fieldset { margin: 1em auto; }
+      legend { font-weight: bold; }
+      .slider {
+        width: 60%;
+        margin: 0em;
+        display: inline-block;
+      }
+      .label {
+        text-align: left;
+        margin-left: .5em;
+      }
+      #graph {
+        position: fixed;
+        left: 100px;
+        width: 600px;
+        height: 600px;
+      }
+      #right {
+        position: absolute;
+        left: 750px;
+        width: 400px;
+      }
+      body { margin: 0; padding: 0; }
+      body, table { font: 9pt/12pt arial; }
+      body { text-align:; }
+      a {
+        color: blue;
+        text-decoration: none;
+        background-color: #dbf0f9;
+        cursor: pointer;
+      }
+      a:hover { text-decoration: underline; }
+
+      h2 {
+        border-radius: 1em;
+        padding: .5em;
+        background-color: lightblue;
+        width: 75%;
+        margin: 1em auto;
+        font-size: 1.5em;
+        text-align: center;
+      }
+      h3 {
+        border-radius: 1em;
+        padding: .5em;
+        border: 2px solid lightblue;
+        background-color: white;
+        width: 65%;
+        margin: 1em auto;
+        font-size: 1.25em;
+      }
+      table { margin: 1em auto; border-collapse: collapse; }
+      td { border: 1px solid gray; padding: .5em; text-align: center; }
+      .bluebox {
+        border: 2px solid lightblue;
+        padding: .25em;
+      }
+      #eulertable table { width: 100%; }
+      #eulertable th,td { border: 1px solid gray; }
+    </style>
+  </head>
+  <body>
+
+    <div style="margin: 1em auto; width: 80%;">
+      <div id="graph"></div>
+      <div id="right">
+        <span>Show text</span>
+        <input type="checkbox" id="showtext" checked="checked" />
+        <div>
+          <br />
+          $S=$ horizontal axis, $I=$ vertical axis.
+          <br /><br />
+          $\begin{align*}
+            \frac{dS}{dt} &= -aSI+c(1-S-I) \\
+            \frac{dI}{dt} &= aSI+bI
+          \end{align*}$
+          <br /><br />
+          The $S$-nullcline is in blue and the $I$-nullcline is in red. The
+          intersection(s) of blue and red is(are) the equilibrium point(s).
+          <br /><br />
+          You can tweak the constants $a$, $b$, and $c$ below. Setting $c=0$
+          gives the SIR model in the textbook. Setting $c>0$ gives the SIRS
+          model in the lab manual.
+          <br /><br />
+          Play with $a$, $b$, and $c$ (protip: drag the sliders with your mouse
+          for faster movement; click on them and use your arrow keys for finer
+          movement). Notice how the arrows rotate like little clocks&mdash;but
+          no matter how they rotate, they're always close-to-vertical near the
+          blue graph and close-to-horizontal near the red graph.
+          <br /><br />
+          Which constant represents the contagious-ness of the disease? Which
+          constant represents the ease of recovery from the disease? Which
+          constant represents the level of immunity from the disease after
+          contracting and recovering?
+        </div>
+        <fieldset id="constants">
+          <legend>Constants</legend>
+        </fieldset>
+        <div>
+          Notice that the arrows are always pointing northwest in the red
+          region, southwest in the yellow region, southeast in the green region,
+          and northeast in the blue region&mdash;this is consistent with the
+          phase plane analysis you did in lab.
+        </div>
+        <fieldset id="slopefield">
+          <legend>Phase Plane</legend>
+        </fieldset>
+        <div>
+          For Euler's method, the only initial condition you can set is $S(0)$.
+          This is because $R(0)$ must be $0$ (why?) and $I(0)$ must be $1-S(0)$
+          (why?). The actual solution is in black. The approximate solution
+          using Euler's method is in green.
+        </div>
+        <fieldset>
+          <legend>Euler's Method</legend>
+          <div id="euler"></div>
+          <div id="eulertable">
+            <table>
+              <thead>
+                <tr>
+                  <th>Step</th>
+                  <th>$t$</th>
+                  <th>$S$</th>
+                  <th>$I$</th>
+                  <th>$\displaystyle\frac{dS}{dt}$</th>
+                  <th>$\displaystyle\frac{dI}{dt}$</th>
+                  <th>$R$</th>
+                </tr>
+              </thead>
+              <tbody>
+              </tbody>
+            </table>
+          </div>
+        </fieldset>
+      </div>
+    </div>
+
+  </body>
+</html>
